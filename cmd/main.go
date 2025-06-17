@@ -8,7 +8,8 @@ import (
 )
 
 func main() {
-	p := tea.NewProgram(model.NewModel())
+	model := model.NewModel()
+	p := tea.NewProgram(model)
 	if _, err := p.Run(); err != nil {
 		log.Fatalf("error: %s", err.Error())
 	}

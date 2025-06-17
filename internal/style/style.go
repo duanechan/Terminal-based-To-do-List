@@ -15,7 +15,7 @@ func Header(text string) string {
 
 func TodoHighlight(todo string) string {
 	return lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
+		Border(lipgloss.RoundedBorder()).
 		Bold(true).
 		Background(lipgloss.Color("#ffbf00")).
 		Render(fmt.Sprintf("%-32s", todo))
@@ -23,6 +23,6 @@ func TodoHighlight(todo string) string {
 
 func Todo(todo string) string {
 	return lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
+		Border(lipgloss.RoundedBorder()).
 		Render(fmt.Sprintf("%-32s", todo))
 }

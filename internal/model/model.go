@@ -2,8 +2,9 @@ package model
 
 import (
 	"fmt"
-	style "todo/internal/util"
+	"todo/internal/style"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -19,26 +20,51 @@ func (t Todo) String() string {
 }
 
 type Model struct {
-	Height   int
-	Width    int
-	Cursor   int
-	Selected *Todo
-	Todos    []Todo
+	InsertMode bool
+	Height     int
+	Width      int
+	Cursor     int
+	FieldIdx   int
+	Selected   *Todo
+	Todos      []Todo
+	Fields     []textinput.Model
 }
 
 func NewModel() Model {
-	return Model{Todos: []Todo{
-		{Done: false, Name: "Dishes", Description: "Wash all the dishes from last night."},
-		{Done: false, Name: "Buy Groceries", Description: "Stock running low. Need some by next week"},
-		{Done: false, Name: "Exercise", Description: "30-reps of cardio stuff."},
-	}}
+	var fields []textinput.Model
+	var ti textinput.Model
+
+	for i := range 2 {
+		ti = textinput.New()
+		ti.Width = 150
+		ti.TextStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ffbf00"))
+		switch i {
+		case 0:
+			ti.Prompt = "Name: "
+			ti.Placeholder = "Study for Exams"
+			ti.CharLimit = 15
+
+		case 1:
+			ti.Prompt = "Description (optional): "
+			ti.Placeholder = "Do a 30-minute review on data structures & algorithms."
+			ti.CharLimit = 64
+
+		}
+		fields = append(fields, ti)
+	}
+
+	return Model{
+		Fields: fields,
+		Todos:  []Todo{},
+	}
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.EnterAltScreen
+	return tea.Batch(tea.EnterAltScreen, textinput.Blink)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -49,34 +75,95 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
+
 		case tea.KeyUp:
 			if m.Cursor > 0 {
 				m.Cursor--
 			}
+
 		case tea.KeyDown:
 			if m.Cursor < len(m.Todos)-1 {
 				m.Cursor++
 			}
+
 		case tea.KeyEnter:
+			if m.InsertMode {
+				if m.FieldIdx < len(m.Fields)-1 {
+					// Move forward to the next field
+					m.Fields[m.FieldIdx].Blur()
+					m.FieldIdx++
+					m.Fields[m.FieldIdx].Focus()
+					return m, nil
+				} else {
+					if m.Fields[0].Value() == "" {
+						return m, nil
+					}
+					todo := Todo{Done: false, Name: m.Fields[0].Value(), Description: m.Fields[1].Value()}
+					m.Todos = append(m.Todos, todo)
+
+					// Clear fields afterwards
+					for i := range m.Fields {
+						m.Fields[i].SetValue("")
+						m.Fields[i].Blur()
+					}
+					m.FieldIdx = 0
+					m.Fields[0].Focus()
+					m.InsertMode = false
+					m.Selected = &todo
+
+					return m, nil
+				}
+			}
+
 			m.Selected = &m.Todos[m.Cursor]
 
+		case tea.KeyCtrlA:
+			m.InsertMode = true
+			m.Fields[0].Focus()
+
 		case tea.KeyEsc:
+			if m.InsertMode {
+				m.InsertMode = false
+				m.Fields[0].Blur()
+				m.Fields[1].Blur()
+				return m, nil
+			}
+
 			if m.Selected != nil {
 				m.Selected = nil
 			}
 		}
 	}
 
-	return m, nil
+	m.Fields[m.FieldIdx], cmd = m.Fields[m.FieldIdx].Update(msg)
+
+	return m, cmd
 }
 
 func (m Model) View() string {
+	if m.InsertMode {
+		sections := []string{"Insert Mode"}
+
+		for i := range m.Fields {
+			sections = append(sections, m.Fields[i].View())
+		}
+
+		return lipgloss.Place(
+			m.Width, m.Height,
+			lipgloss.Left, 0,
+			lipgloss.JoinVertical(
+				lipgloss.Left,
+				sections...,
+			),
+		)
+	}
+
 	var first, second []string
 
 	first = append(first, style.Header("Your To-do List:"))
 
 	if len(m.Todos) == 0 {
-		first = append(first, "It's empty.")
+		first = append(first, "It's empty. Press Insert to add an item.")
 	} else {
 		for i, todo := range m.Todos {
 			shortened := todo.String()
@@ -98,14 +185,14 @@ func (m Model) View() string {
 	second = append(second, lipgloss.JoinVertical(lipgloss.Left, first...))
 
 	if m.Selected != nil {
-		second = append(second, m.Selected.Description)
+		second = append(second, lipgloss.NewStyle().Padding(1).Render(m.Selected.Description))
 	}
 
 	return lipgloss.Place(
 		m.Width, m.Height,
-		lipgloss.Left, 0.8,
+		lipgloss.Left, 0,
 		lipgloss.JoinHorizontal(
-			lipgloss.Center,
+			lipgloss.Left,
 			second...,
 		),
 	)
