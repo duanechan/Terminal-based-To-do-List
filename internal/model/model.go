@@ -2,6 +2,8 @@ package model
 
 import (
 	"fmt"
+	"slices"
+	"time"
 	"todo/internal/style"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -10,6 +12,8 @@ import (
 )
 
 type Todo struct {
+	Id          int
+	CreatedAt   int64
 	Done        bool
 	Name        string
 	Description string
@@ -77,19 +81,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case tea.KeyUp:
+			if m.InsertMode && m.FieldIdx > 0 {
+				m.Fields[m.FieldIdx].Blur()
+				m.FieldIdx--
+				m.Fields[m.FieldIdx].Focus()
+			}
+
 			if m.Cursor > 0 {
 				m.Cursor--
+				m.Selected = &m.Todos[m.Cursor]
 			}
 
 		case tea.KeyDown:
+			if m.InsertMode && m.FieldIdx < len(m.Fields)-1 {
+				m.Fields[m.FieldIdx].Blur()
+				m.FieldIdx++
+				m.Fields[m.FieldIdx].Focus()
+			}
+
 			if m.Cursor < len(m.Todos)-1 {
 				m.Cursor++
+				m.Selected = &m.Todos[m.Cursor]
 			}
 
 		case tea.KeyEnter:
 			if m.InsertMode {
 				if m.FieldIdx < len(m.Fields)-1 {
-					// Move forward to the next field
 					m.Fields[m.FieldIdx].Blur()
 					m.FieldIdx++
 					m.Fields[m.FieldIdx].Focus()
@@ -98,10 +115,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.Fields[0].Value() == "" {
 						return m, nil
 					}
-					todo := Todo{Done: false, Name: m.Fields[0].Value(), Description: m.Fields[1].Value()}
+					todo := Todo{
+						Done:        false,
+						CreatedAt:   time.Now().Unix(),
+						Name:        m.Fields[0].Value(),
+						Description: m.Fields[1].Value(),
+					}
 					m.Todos = append(m.Todos, todo)
 
-					// Clear fields afterwards
 					for i := range m.Fields {
 						m.Fields[i].SetValue("")
 						m.Fields[i].Blur()
@@ -109,13 +130,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.FieldIdx = 0
 					m.Fields[0].Focus()
 					m.InsertMode = false
+					m.Cursor = slices.Index(m.Todos, todo)
 					m.Selected = &todo
 
 					return m, nil
 				}
 			}
-
-			m.Selected = &m.Todos[m.Cursor]
 
 		case tea.KeyCtrlA:
 			m.InsertMode = true
@@ -127,10 +147,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.Fields[0].Blur()
 				m.Fields[1].Blur()
 				return m, nil
-			}
-
-			if m.Selected != nil {
-				m.Selected = nil
 			}
 		}
 	}
@@ -160,24 +176,16 @@ func (m Model) View() string {
 
 	var first, second []string
 
-	first = append(first, style.Header("Your To-do List:"))
+	first = append(first, style.Header.Render("Your To-do List:"))
 
 	if len(m.Todos) == 0 {
 		first = append(first, "It's empty. Press Insert to add an item.")
 	} else {
 		for i, todo := range m.Todos {
-			shortened := todo.String()
-
-			runes := []rune(shortened)
-
-			if len(runes) > 24 {
-				shortened = string(runes[:20]) + "..."
-			}
-
 			if i == m.Cursor {
-				first = append(first, style.TodoHighlight(fmt.Sprintf(" ► %d.   %s", i+1, shortened)))
+				first = append(first, style.HighlightTodo.Render(fmt.Sprintf(" ► %d.   %-32s", i+1, todo)))
 			} else {
-				first = append(first, style.Todo(fmt.Sprintf("   %d.   %s", i+1, shortened)))
+				first = append(first, style.Todo.Render(fmt.Sprintf("   %d.   %-32s", i+1, todo)))
 			}
 		}
 	}
@@ -185,7 +193,22 @@ func (m Model) View() string {
 	second = append(second, lipgloss.JoinVertical(lipgloss.Left, first...))
 
 	if m.Selected != nil {
-		second = append(second, lipgloss.NewStyle().Padding(1).Render(m.Selected.Description))
+		t := time.Unix(m.Selected.CreatedAt, 0)
+
+		second = append(second,
+			lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Render(
+				lipgloss.Place(
+					m.Width/4, m.Height/2,
+					lipgloss.Left, lipgloss.Left,
+					lipgloss.JoinVertical(
+						lipgloss.Left,
+						t.Format("January 2, 2006 3:04 PM")+"\n",
+						m.Selected.Name+"\n",
+						m.Selected.Description,
+					),
+				),
+			),
+		)
 	}
 
 	return lipgloss.Place(
